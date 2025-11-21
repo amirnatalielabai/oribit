@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbiting Photo Entities</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        /* BACKGROUND SETUP */
+        #background-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2011&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+            z-index: 1;
+            filter: brightness(0.6);
+        }
+
+        /* FLASH EFFECT OVERLAY */
+        #flash-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none; /* Let clicks pass through */
+            transition: opacity 0.1s ease-out;
+        }
+
+        /* SHARED ENTITY STYLES */
+        .entity {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            z-index: 10;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            
+            /* Centers the pivot point */
+            transform: translate(-50%, -50%); 
+        }
+
+        /* ENTITY 1 */
+        #entity1 {
+            /* Replace with your actual image URL */
+            background-image: url('me.jpeg'); 
+        }
+
+        /* ENTITY 2 */
+        #entity2 {
+            /* Replace with your actual image URL */
+            background-image: url('you.jpeg');
+        }
+
+        /* UI Hint */
+        .hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.6);
+            font-family: sans-serif;
+            font-size: 14px;
+            z-index: 20;
+            pointer-events: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="background-layer"></div>
+    <div id="flash-overlay"></div>
+    
+    <div id="entity1" class="entity"></div>
+    <div id="entity2" class="entity"></div>
+
+    <div class="hint">Click anywhere to collide and restart.</div>
+
+    <script>
+        const e1 = document.getElementById('entity1');
+        const e2 = document.getElementById('entity2');
+        const flashOverlay = document.getElementById('flash-overlay');
+
+        // --- CONFIGURATION ---
+        const CYCLE_DURATION = 10000; // 10 seconds total cycle
+        const FALL_START_TIME = 8500; // Start falling at 8.5 seconds
+        
+        // State Machine Constants
+        const STATE_NORMAL = 'normal';
+        const STATE_COLLIDING = 'colliding';
+        
+        let currentState = STATE_NORMAL;
+        let cycleStartTime = Date.now();
+        
+        // Global "Entry" Multiplier: 
+        // Starts high (offscreen) and shrinks to 1 (orbiting)
+        let entryMultiplier = 5.0; 
+        
+        // Gravity simulation for the falling phase
+        let fallVelocity = 0;
+        let fallYOffset = 0;
+
+        // Movement Parameters
+        let params1 = {
+            speedX: 1.2, speedY: 1.5,
+            radiusX: 35, radiusY: 35,
+            offsetX: 0, offsetY: 0
+        };
+
+        let params2 = {
+            speedX: -1.1, speedY: 0.9,
+            radiusX: 30, radiusY: 30,
+            offsetX: Math.PI, offsetY: Math.PI / 2
+        };
+
+        // Current positions (stored for collision logic)
+        let p1 = { x: 0, y: 0 };
+        let p2 = { x: 0, y: 0 };
+
+        function randomizeParams() {
+            params1.speedX = 0.5 + Math.random() * 1.5;
+            params1.speedY = 0.5 + Math.random() * 1.5;
+            params1.radiusX = 20 + Math.random() * 25; 
+            params1.radiusY = 20 + Math.random() * 25;
+
+            params2.speedX = -(0.5 + Math.random() * 1.5);
+            params2.speedY = 0.5 + Math.random() * 1.5;
+            params2.radiusX = 20 + Math.random() * 25;
+            params2.radiusY = 20 + Math.random() * 25;
+        }
+
+        function resetCycle() {
+            currentState = STATE_NORMAL;
+            cycleStartTime = Date.now();
+            entryMultiplier = 4.0; // Start way out
+            fallVelocity = 0;
+            fallYOffset = 0;
+            randomizeParams();
+        }
+
+        function triggerFlash() {
+            flashOverlay.style.transition = 'none';
+            flashOverlay.style.opacity = 1;
+            
+            // Force reflow to apply opacity 1 immediately
+            void flashOverlay.offsetWidth; 
+            
+            // Fade out
+            flashOverlay.style.transition = 'opacity 1.5s ease-out';
+            flashOverlay.style.opacity = 0;
+        }
+
+        // --- CLICK HANDLER ---
+        window.addEventListener('click', () => {
+            if (currentState !== STATE_COLLIDING) {
+                currentState = STATE_COLLIDING;
+            }
+        });
+
+        function animate() {
+            const now = Date.now();
+            const elapsed = now - cycleStartTime;
+            const vw = window.innerWidth / 2;
+            const vh = window.innerHeight / 2;
+            
+            // Time factor for oscillation
+            const time = elapsed * 0.001; 
+
+            if (currentState === STATE_NORMAL) {
+                // 1. Handle Entry Logic (Smoothly shrink radius multiplier)
+                // Lerp entryMultiplier towards 1.0
+                entryMultiplier += (1.0 - entryMultiplier) * 0.05;
+
+                // 2. Handle Falling Logic (Time based)
+                if (elapsed > FALL_START_TIME) {
+                    fallVelocity += 1.5; // accelerate gravity
+                    fallYOffset += fallVelocity;
+                } else if (elapsed > CYCLE_DURATION) {
+                    // Safety reset if they fell off screen
+                    resetCycle();
+                }
+
+                // 3. Calculate Orbit Positions
+                // Entity 1
+                p1.x = vw + (Math.cos(time * params1.speedX + params1.offsetX) * (params1.radiusX / 100 * window.innerWidth * entryMultiplier));
+                p1.y = vh + (Math.sin(time * params1.speedY + params1.offsetY) * (params1.radiusY / 100 * window.innerHeight * entryMultiplier)) + fallYOffset;
+
+                // Entity 2
+                p2.x = vw + (Math.cos(time * params2.speedX + params2.offsetX) * (params2.radiusX / 100 * window.innerWidth * entryMultiplier));
+                p2.y = vh + (Math.sin(time * params2.speedY + params2.offsetY) * (params2.radiusY / 100 * window.innerHeight * entryMultiplier)) + fallYOffset;
+                
+                // Check for cycle reset (if fell far enough)
+                if (p1.y > window.innerHeight + 200 && p2.y > window.innerHeight + 200) {
+                    resetCycle();
+                }
+
+            } else if (currentState === STATE_COLLIDING) {
+                // Move towards center (vw, vh) rapidly
+                const lerpSpeed = 0.15;
+                
+                p1.x += (vw - p1.x) * lerpSpeed;
+                p1.y += (vh - p1.y) * lerpSpeed;
+                
+                p2.x += (vw - p2.x) * lerpSpeed;
+                p2.y += (vh - p2.y) * lerpSpeed;
+
+                // Check distance to center
+                const dist1 = Math.hypot(p1.x - vw, p1.y - vh);
+                
+                // If close enough to center, Boom
+                if (dist1 < 10) {
+                    triggerFlash();
+                    resetCycle();
+                }
+            }
+
+            // Apply positions to DOM
+            e1.style.left = `${p1.x}px`;
+            e1.style.top = `${p1.y}px`;
+            e2.style.left = `${p2.x}px`;
+            e2.style.top = `${p2.y}px`;
+
+            requestAnimationFrame(animate);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {});
+
+        // Start
+        resetCycle();
+        animate();
+
+    </script>
+</body>
+</html>
